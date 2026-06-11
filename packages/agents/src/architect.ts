@@ -2,9 +2,9 @@
  * @aimen/agents — ArchitectAgent（架构师代理）
  *
  * 继承 AimenAgent，用于系统架构分析与设计。
- * 加载 skills/architect/SKILL.md 作为指令上下文，
- * 提供 readArchitectSkill()、analyzeArchitecture()、formatOutput() 三个工具，
- * 遵循"可演化、可组合、可观察、可理解"的架构哲学。
+ * 加载 skills/architect/SKILL.md 作为指令上下文。
+ * - LLM 可用时：调用真实 LLM 进行架构分析
+ * - LLM 不可用时：降级为模拟数据
  *
  * @packageDocumentation
  * @module @aimen/agents/architect
@@ -19,10 +19,6 @@ import { AimenAgent, AgentStatus } from './aimen-agent.js';
 // 常量
 // ---------------------------------------------------------------------------
 
-/**
- * 架构师 SKILL.md 文件的默认路径
- * 从当前文件位置向上回溯到仓库根目录下的 skills/architect/SKILL.md
- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -33,33 +29,16 @@ const DEFAULT_SKILL_PATH = resolve(__dirname, '..', '..', '..', 'skills', 'archi
 // 工具结果类型
 // ---------------------------------------------------------------------------
 
-/**
- * 架构分析结果
- *
- * 包含分析路径、分析结论、发现的模式列表、以及风险警告列表。
- */
 export interface ArchitectureAnalysis {
-  /** 被分析的代码根路径 */
   path: string;
-  /** 架构分析结论描述 */
   analysis: string;
-  /** 识别到的架构模式列表 */
   patterns: string[];
-  /** 潜在风险或问题警告 */
   risks: string[];
 }
 
-/**
- * 格式化后的架构计划
- *
- * 包含计划标题、正文内容、以及遵循的架构原则列表。
- */
 export interface FormattedArchitectPlan {
-  /** 计划标题 */
   title: string;
-  /** 计划正文（Markdown 格式） */
   body: string;
-  /** 遵循的架构原则 */
   principles: string[];
 }
 
@@ -67,40 +46,11 @@ export interface FormattedArchitectPlan {
 // ArchitectAgent
 // ---------------------------------------------------------------------------
 
-/**
- * 架构师代理
- *
- * 继承 AimenAgent，专注于系统架构分析、技术方案评审和设计建议。
- * 加载仓库 skills/architect/SKILL.md 文件作为系统指令上下文，
- * 利用"可演化、可组合、可观察、可理解"的架构哲学进行分析。
- *
- * @remarks
- * - 当前为**模拟模式**，工具方法返回预定义结构而非真实 LLM 调用结果
- * - execute() 实现基于架构师哲学进行模拟分析
- *
- * @example
- * ```ts
- * const architect = new ArchitectAgent('arch-1', '架构师', router);
- * const result = await architect.execute('分析 /src 的架构', {});
- * console.log(result);
- * ```
- */
 export class ArchitectAgent extends AimenAgent {
-  /** 缓存的 SKILL.md 内容 */
   #skillContent: string | null = null;
-
-  /** SKILL.md 文件路径 */
   readonly skillPath: string;
-
-  /** 当前是否已加载 skill 内容 */
   #skillLoaded = false;
 
-  /**
-   * @param agentId    - 代理唯一标识
-   * @param name       - 代理显示名称
-   * @param router     - 可选的 ACP MessageRouter 引用
-   * @param skillPath  - SKILL.md 文件路径（默认从 repo 根目录查找）
-   */
   constructor(
     agentId: string,
     name: string = 'Architect',
@@ -111,17 +61,8 @@ export class ArchitectAgent extends AimenAgent {
     this.skillPath = skillPath;
   }
 
-  /**
-   * 读取架构师技能文件（SKILL.md）
-   *
-   * 从文件系统加载 SKILL.md 内容并缓存。如果文件不存在则返回默认提示。
-   *
-   * @returns SKILL.md 的完整文本内容
-   */
   readArchitectSkill(): string {
-    if (this.#skillContent) {
-      return this.#skillContent;
-    }
+    if (this.#skillContent) return this.#skillContent;
 
     if (existsSync(this.skillPath)) {
       this.#skillContent = readFileSync(this.skillPath, 'utf-8');
@@ -133,20 +74,8 @@ export class ArchitectAgent extends AimenAgent {
     return this.#skillContent!;
   }
 
-  /**
-   * 分析指定路径的架构
-   *
-   * 读取 SKILL.md 内容作为分析框架，对指定代码路径进行架构分析。
-   * 当前为**模拟模式**，返回结构化占位结果。
-   *
-   * @param path - 要分析的目标文件或目录路径
-   * @returns ArchitectureAnalysis 对象，包含分析结论、识别模式和风险列表
-   */
   analyzeArchitecture(path: string): ArchitectureAnalysis {
-    // 加载 skill 上下文（若尚未加载）
     this.readArchitectSkill();
-
-    // 模拟分析逻辑
     return {
       path,
       analysis: `对 "${path}" 进行了架构分析。遵循可演化、可组合、可观察、可理解的设计原则，识别了当前系统的核心模型与边界。`,
@@ -163,14 +92,6 @@ export class ArchitectAgent extends AimenAgent {
     };
   }
 
-  /**
-   * 格式化架构计划输出
-   *
-   * 将分析计划按照架构师输出标准格式化，包含本质问题、核心模型、风险与演化路径。
-   *
-   * @param plan - 架构计划文本
-   * @returns FormattedArchitectPlan 对象
-   */
   formatOutput(plan: string): FormattedArchitectPlan {
     return {
       title: '架构分析与设计方案',
@@ -187,21 +108,66 @@ export class ArchitectAgent extends AimenAgent {
   /**
    * 实现 AimenAgent 的抽象 execute() 方法
    *
-   * 基于架构师哲学对任务目标进行模拟分析。
-   * 自动加载 SKILL.md 作为分析上下文，返回结构化分析结果。
-   *
-   * @param goal    - 任务目标（例如 "分析项目架构"、"评审设计方案"）
-   * @param context - 上下文信息（可包含 path、focus 等字段）
-   * @returns 结构化分析结果或格式化计划
+   * 当 LLM 环境变量完整时调用真实 LLM 进行架构分析。
+   * 加载 SKILL.md 作为系统提示词。无 LLM 配置或调用失败时降级为模拟。
    */
   async execute(goal: string, context: Record<string, unknown>): Promise<unknown> {
     this.setStatus(AgentStatus.Busy);
 
-    // 加载架构师技能上下文
     const skill = this.readArchitectSkill();
     const targetPath = (context.path as string) || './';
 
-    // 模拟分析流程
+    // LLM 模式
+    if (this.llmAvailable) {
+      try {
+        const systemPrompt = `你是一位系统架构专家。你的核心哲学：构建可演化（Evolvable）、可组合（Composable）、可观察（Observable）且可理解（Understandable）的长期系统。
+
+以下是你遵循的架构指令：
+${skill.slice(0, 3000)}
+
+请基于以上哲学进行分析。返回格式为 JSON：
+{
+  "analysis": "分析结论",
+  "patterns": ["模式1", "模式2"],
+  "risks": ["风险1", "风险2"],
+  "recommendations": ["建议1", "建议2"]
+}`;
+
+        const userPrompt = `请分析以下代码路径的架构：${targetPath}
+
+任务目标：${goal}
+
+附加上下文：${JSON.stringify(context, null, 2)}`;
+
+        const content = await this.callLLM(systemPrompt, userPrompt);
+
+        let parsed: { analysis?: string; patterns?: string[]; risks?: string[]; recommendations?: string[] };
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          parsed = { analysis: content, patterns: [], risks: [], recommendations: [] };
+        }
+
+        this.setStatus(AgentStatus.Idle);
+
+        return {
+          status: 'completed',
+          task: goal,
+          source: 'llm',
+          skillLoaded: this.#skillLoaded,
+          llmAnalysis: {
+            analysis: parsed.analysis ?? '',
+            patterns: parsed.patterns ?? [],
+            risks: parsed.risks ?? [],
+            recommendations: parsed.recommendations ?? [],
+          },
+        };
+      } catch (err) {
+        console.warn(`[ArchitectAgent] LLM 调用失败，降级为模拟模式:`, err);
+      }
+    }
+
+    // 模拟模式（LLM 不可用或调用失败）
     const analysis = this.analyzeArchitecture(targetPath);
     const output = this.formatOutput(
       `目标: ${goal}\n\n分析摘要: 代码路径 "${targetPath}" 的架构评估已完成。\n\n` +
@@ -214,8 +180,9 @@ export class ArchitectAgent extends AimenAgent {
     return {
       status: 'completed',
       task: goal,
+      source: 'simulation',
       skillLoaded: this.#skillLoaded,
-      skillExcerpt: skill.slice(0, 200) + '...',
+      skillExcerpt: this.#skillContent ? this.#skillContent.slice(0, 200) + '...' : undefined,
       analysis,
       formattedPlan: output,
     };

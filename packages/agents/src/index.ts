@@ -8,8 +8,8 @@
  */
 
 // 基础类
-export { AimenAgent, AgentStatus } from './aimen-agent.js';
-export type { AgentStatusInfo } from './aimen-agent.js';
+export { AimenAgent, AgentStatus, callLLM, isLLMAvailable } from './aimen-agent.js';
+export type { AgentStatusInfo, LLMConfig } from './aimen-agent.js';
 
 // 架构师代理
 export { ArchitectAgent } from './architect.js';

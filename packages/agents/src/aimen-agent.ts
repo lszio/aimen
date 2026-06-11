@@ -1,17 +1,130 @@
 /**
  * @aimen/agents — AimenAgent 基类
  *
- * 所有 aimen 代理的基类。包装一个 Mastra Agent，连接到 ACP Bus，
+ * 所有 aimen 代理的基类。包装 LLM 调用能力，连接到 ACP Bus，
  * 处理 TaskSubmit → execute → TaskResult 生命周期。
- * 抽象方法 execute() 由子类实现，当前为模拟模式（无 LLM 调用）。
+ * 抽象方法 execute() 由子类实现，子类可通过 callLLM() 获取真实 LLM 响应。
+ * 无 LLM 环境变量时自动降级为模拟数据。
  *
  * @packageDocumentation
  * @module @aimen/agents/aimen-agent
  */
 
-import type { AcpMessageEnvelope, AcpTaskPayload, AcpTaskResultPayload } from '@aimen/acp-bus';
-import { AcpMessageType, createMessage, isAcpTaskPayload, isAcpTaskResultPayload } from '@aimen/acp-bus';
+import type { AcpMessageEnvelope } from '@aimen/acp-bus';
+import { AcpMessageType, createMessage, isAcpTaskPayload } from '@aimen/acp-bus';
 import type { MessageRouter } from '@aimen/acp-bus';
+
+// ---------------------------------------------------------------------------
+// LLM 配置与调用
+// ---------------------------------------------------------------------------
+
+/**
+ * LLM 配置，从环境变量读取
+ */
+export interface LLMConfig {
+  /** API 基础 URL，默认读取 LLM_API_URL 环境变量 */
+  apiUrl: string;
+  /** API Key，默认读取 LLM_API_KEY 环境变量 */
+  apiKey: string;
+  /** 模型名称，默认读取 LLM_MODEL 环境变量 */
+  model: string;
+  /** 温度，默认 0.7 */
+  temperature: number;
+  /** 最大生成长度，默认 4096 */
+  maxTokens: number;
+}
+
+/**
+ * 从环境变量读取 LLM 配置
+ *
+ * 当环境变量不完整时返回 null，表示应使用模拟模式。
+ */
+function getLLMConfig(): LLMConfig | null {
+  const apiUrl = process.env.LLM_API_URL;
+  const apiKey = process.env.LLM_API_KEY;
+  const model = process.env.LLM_MODEL;
+
+  if (!apiUrl || !apiKey || !model) return null;
+
+  return {
+    apiUrl,
+    apiKey,
+    model,
+    temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.7'),
+    maxTokens: parseInt(process.env.LLM_MAX_TOKENS || '4096', 10),
+  };
+}
+
+/**
+ * 调用 OpenAI 兼容的 LLM API
+ *
+ * @param system  - 系统提示词
+ * @param prompt  - 用户提示词
+ * @param config  - LLM 配置（可选，不传时从环境变量读取）
+ * @returns LLM 响应文本
+ * @throws 当配置缺失或 API 调用失败时抛出错误
+ */
+export async function callLLM(
+  system: string,
+  prompt: string,
+  config?: LLMConfig,
+): Promise<string> {
+  const cfg = config ?? getLLMConfig();
+  if (!cfg) {
+    throw new Error('LLM 配置不完整 — 请设置 LLM_API_URL, LLM_API_KEY, LLM_MODEL 环境变量');
+  }
+
+  const body = {
+    model: cfg.model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: prompt },
+    ],
+    temperature: cfg.temperature,
+    max_tokens: cfg.maxTokens,
+  };
+
+  const baseUrl = cfg.apiUrl.replace(/\/+$/, '');
+  const url = baseUrl.includes('/chat/completions')
+    ? baseUrl
+    : `${baseUrl}/chat/completions`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${cfg.apiKey}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(120_000),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`LLM API 错误 (${response.status}): ${text.slice(0, 200)}`);
+  }
+
+  const data = (await response.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error('LLM API 返回空内容');
+  }
+
+  return content;
+}
+
+/**
+ * 判断 LLM 是否可用（环境变量是否完整）
+ */
+export function isLLMAvailable(): boolean {
+  return !!(
+    process.env.LLM_API_URL &&
+    process.env.LLM_API_KEY &&
+    process.env.LLM_MODEL
+  );
+}
 
 // ---------------------------------------------------------------------------
 // 状态枚举
@@ -19,10 +132,6 @@ import type { MessageRouter } from '@aimen/acp-bus';
 
 /**
  * 代理运行状态枚举
- *
- * - idle:  空闲，可以接受任务
- * - busy:  正在执行任务
- * - error: 发生不可恢复的错误
  */
 export enum AgentStatus {
   Idle = 'idle',
@@ -36,20 +145,12 @@ export enum AgentStatus {
 
 /**
  * 代理状态信息
- *
- * 包含代理当前的运行状态、唯一标识和角色标签，
- * 用于 getStatus() 方法的返回值以及注册到 AgentRegistry 时的信息。
  */
 export interface AgentStatusInfo {
-  /** 代理唯一标识 */
   agentId: string;
-  /** 代理显示名称 */
   name: string;
-  /** 代理角色（如 architect、coder、researcher） */
   role: string;
-  /** 当前运行状态 */
   status: AgentStatus;
-  /** 代理具备的能力列表 */
   capabilities: string[];
 }
 
@@ -60,46 +161,39 @@ export interface AgentStatusInfo {
 /**
  * 所有 aimen 代理的抽象基类
  *
- * 包装一个 Mastra Agent 实例，持有 ACP MessageRouter 引用，
- * 实现 TaskSubmit → execute → TaskResult 生命周期。
+ * 持有 ACP MessageRouter 引用，实现 TaskSubmit → execute → TaskResult 生命周期。
+ * 子类可通过 callLLM() 方法调用真实 LLM API，或自行实现 execute() 逻辑。
  *
  * @remarks
  * - execute() 为抽象方法，子类必须实现
- * - 当前为**模拟模式**（无 LLM 调用），后续阶段会接入真实模型
- * - 子类通过构造时传入的 router 向 ACP 总线注册自身
+ * - 子类可通过 this.callLLM() 调用 LLM API（需要设置 LLM_API_URL 等环境变量）
+ * - 无 LLM 环境变量时 callLLM() 抛出错误，子类应降级为模拟数据
  *
  * @example
  * ```ts
  * class MyAgent extends AimenAgent {
  *   async execute(goal: string, context: Record<string, unknown>) {
- *     // 模拟执行
- *     return { status: 'done', result: `已完成: ${goal}` };
+ *     if (isLLMAvailable()) {
+ *       const result = await this.callLLM('你是助手', goal);
+ *       return { status: 'completed', result };
+ *     }
+ *     return { status: 'completed', result: `模拟: ${goal}` };
  *   }
  * }
  * ```
  */
 export abstract class AimenAgent {
-  /** 代理唯一标识 */
   readonly agentId: string;
-  /** 代理显示名称 */
   readonly name: string;
-  /** 代理角色标签 */
   readonly role: string;
-  /** 代理具备的能力列表 */
   readonly capabilities: string[];
-  /** ACP 消息路由器引用（可选） */
   protected router?: MessageRouter;
 
-  /** 当前状态 */
   #status: AgentStatus = AgentStatus.Idle;
 
-  /**
-   * @param agentId    - 代理唯一标识
-   * @param name       - 代理显示名称
-   * @param role       - 代理角色标签
-   * @param capabilities - 代理能力列表
-   * @param router     - 可选的 ACP MessageRouter 引用
-   */
+  /** 缓存的 LLM 配置 */
+  #llmConfig: LLMConfig | null = null;
+
   constructor(
     agentId: string,
     name: string,
@@ -114,22 +208,10 @@ export abstract class AimenAgent {
     this.router = router;
   }
 
-  /**
-   * 绑定到 ACP MessageRouter
-   *
-   * 在构造后调用，传入 router 实例，代理即可接收 ACP 消息。
-   *
-   * @param router - ACP MessageRouter 实例
-   */
   connect(router: MessageRouter): void {
     this.router = router;
   }
 
-  /**
-   * 获取当前代理状态信息
-   *
-   * @returns AgentStatusInfo 对象，包含标识、名称、角色、状态和能力
-   */
   getStatus(): AgentStatusInfo {
     return {
       agentId: this.agentId,
@@ -140,24 +222,36 @@ export abstract class AimenAgent {
     };
   }
 
-  /**
-   * 设置内部状态
-   *
-   * @param status - 新的状态值
-   */
   protected setStatus(status: AgentStatus): void {
     this.#status = status;
   }
 
   /**
+   * 调用 LLM API
+   *
+   * 子类可以直接调用此方法获取真实 LLM 响应。
+   *
+   * @param system - 系统提示词
+   * @param prompt - 用户提示词
+   * @returns LLM 响应文本
+   * @throws 当 LLM 配置缺失或 API 调用失败时抛出错误
+   */
+  protected async callLLM(system: string, prompt: string): Promise<string> {
+    if (!this.#llmConfig) {
+      this.#llmConfig = getLLMConfig();
+    }
+    return callLLM(system, prompt, this.#llmConfig ?? undefined);
+  }
+
+  /**
+   * 判断 LLM 是否可用
+   */
+  protected get llmAvailable(): boolean {
+    return isLLMAvailable();
+  }
+
+  /**
    * 处理一条 ACP 消息信封
-   *
-   * 根据 messageType 执行对应的生命周期逻辑：
-   * - TaskSubmit：提取 goal 和 context，调用 execute()，返回 TaskResult
-   * - 其他消息类型返回 null（不处理）
-   *
-   * @param envelope - 待处理的 ACP 消息信封
-   * @returns 响应信封（TaskResult）或 null
    */
   async handleMessage(envelope: AcpMessageEnvelope): Promise<AcpMessageEnvelope | null> {
     if (envelope.messageType !== AcpMessageType.TaskSubmit) {
@@ -178,18 +272,12 @@ export abstract class AimenAgent {
     const goal = payload.goal;
     const context = payload.context ?? {};
 
-    // 标记为忙碌
     this.#status = AgentStatus.Busy;
 
     try {
-      // 执行任务（子类实现具体逻辑）
       const result = await this.execute(goal, context);
 
-      // 构建 TaskResult 响应
-      const resultPayload: AcpTaskResultPayload = {
-        taskId,
-        result,
-      };
+      const resultPayload = { taskId, result };
 
       this.#status = AgentStatus.Idle;
 
@@ -202,17 +290,11 @@ export abstract class AimenAgent {
     } catch (err) {
       this.#status = AgentStatus.Error;
 
-      const errorPayload: AcpTaskResultPayload = {
-        taskId,
-        result: null,
-        error: err instanceof Error ? err.message : String(err),
-      };
-
       return createMessage(
         AcpMessageType.TaskResult,
         this.agentId,
         envelope.senderId,
-        errorPayload as Record<string, unknown>,
+        { taskId, result: null, error: err instanceof Error ? err.message : String(err) } as Record<string, unknown>,
       );
     }
   }
@@ -220,11 +302,8 @@ export abstract class AimenAgent {
   /**
    * 抽象方法：执行代理的具体任务
    *
-   * 子类必须实现此方法，根据 goal 和 context 执行逻辑并返回结果。
-   * 当前为**模拟模式**，子类无需调用真实 LLM。
-   *
    * @param goal    - 任务目标描述
-   * @param context - 任务上下文信息（可选的状态、环境变量等）
+   * @param context - 任务上下文信息
    * @returns 任务执行结果（Promise）
    */
   abstract execute(goal: string, context: Record<string, unknown>): Promise<unknown>;
