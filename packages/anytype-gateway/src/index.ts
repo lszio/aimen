@@ -32,3 +32,7 @@ export type { AcpMapper } from './object-mapper.js';
 // 任务监控器
 export { AnytypeWatcher, taskSorter } from './watcher.js';
 export type { AnytypeWatcherOptions } from './watcher.js';
+
+// 日志处理器
+export { JournalHandler } from './journal-handler.js';
+export type { JournalEntryObject } from './journal-handler.js';

@@ -12,6 +12,7 @@ import type {
   AnytypeTaskObject,
   AnytypeTaskStatus,
 } from './types.js';
+import type { MockAnytypeClient } from './mock-client.js';
 import {
   AcpMessageType,
   createMessage,
@@ -49,6 +50,21 @@ export interface AcpMapper {
     result: AcpMessageEnvelope,
     existingTask: AnytypeTaskObject,
   ): Partial<AnytypeTaskObject>;
+
+  /**
+   * 将 ACP TaskResult 消息的结果写回 Anytype 存储
+   *
+   * 根据消息载荷中的 result 或 error 字段，更新对应 AnytypeTaskObject
+   * 的状态（'completed' / 'failed'）和内容字段。
+   *
+   * @param result - ACP TaskResult 消息信封，payload 须包含 taskId、result/error
+   * @param client - MockAnytypeClient 实例，用于存储更新
+   * @throws 如果找不到对应的 AnytypeTaskObject 或消息类型不是 TaskResult
+   */
+  applyTaskResult(
+    result: AcpMessageEnvelope,
+    client: MockAnytypeClient,
+  ): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,5 +156,48 @@ export class DefaultAcpMapper implements AcpMapper {
       spaceId: existingTask.spaceId,
       properties: propertiesUpdate,
     };
+  }
+
+  /**
+   * 将 ACP TaskResult 消息的结果写回 Anytype 存储
+   *
+   * 流程：
+   * 1. 校验消息类型是否为 TaskResult
+   * 2. 从 payload 中提取 taskId（对应 AnytypeTaskObject.id）
+   * 3. 通过 client.getObject() 获取现有任务对象
+   * 4. 调用 acpResultToAnytypeTaskUpdate 生成更新字段
+   * 5. 通过 client.updateObject() 持久化更新
+   *
+   * @param result - ACP TaskResult 消息信封
+   * @param client - MockAnytypeClient 实例
+   * @throws 当消息类型不是 TaskResult 时抛出错误
+   * @throws 当找不到对应任务对象时抛出错误
+   */
+  async applyTaskResult(
+    result: AcpMessageEnvelope,
+    client: MockAnytypeClient,
+  ): Promise<void> {
+    if (result.messageType !== AcpMessageType.TaskResult) {
+      throw new Error(
+        `期望 TaskResult 消息，但收到 ${result.messageType}`,
+      );
+    }
+
+    const payload = result.payload as Record<string, unknown>;
+    const taskId = payload.taskId as string | undefined;
+
+    if (!taskId) {
+      throw new Error('TaskResult 消息缺少 taskId 字段');
+    }
+
+    const existing = client.getObject(taskId);
+    if (!existing) {
+      throw new Error(`未找到对应的 AnytypeTaskObject: ${taskId}`);
+    }
+
+    const taskObject = existing as AnytypeTaskObject;
+    const update = this.acpResultToAnytypeTaskUpdate(result, taskObject);
+
+    client.updateObject(taskId, update);
   }
 }

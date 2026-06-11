@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@aimen/acp-bus": "workspace:*",
+    "@aimen/agents": "workspace:*",
     "@aimen/anytype-gateway": "workspace:*"
   }
 }
