@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "scripts": {
     "dev": "echo 'acp-bus: dev'",
-    "build": "tsc",
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external '@aimen/*' --external '@mastra/*' --external zod",
     "lint": "echo 'acp-bus: lint'"
   }
 }

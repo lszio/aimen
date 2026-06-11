@@ -1,9 +1,10 @@
 node_modules/
+dist/package*.json
 dist/
 .env
 *.log
-# CLI artifacts
-packages/cli/node_modules/
-packages/cli/dist/
+*.__pycache__/
+*.pyc
 *.db
 .aimen/
+.astro/
