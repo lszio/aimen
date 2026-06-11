@@ -1,0 +1,53 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "aimen",
+    },
+    "apps/dashboard": {
+      "name": "@aimen/dashboard",
+      "version": "0.1.0",
+    },
+    "packages/acp-bus": {
+      "name": "@aimen/acp-bus",
+      "version": "0.1.0",
+    },
+    "packages/agents": {
+      "name": "@aimen/agents",
+      "version": "0.1.0",
+    },
+    "packages/anytype-gateway": {
+      "name": "@aimen/anytype-gateway",
+      "version": "0.1.0",
+      "dependencies": {
+        "@aimen/acp-bus": "workspace:*",
+      },
+    },
+    "packages/auth": {
+      "name": "@aimen/auth",
+      "version": "0.1.0",
+    },
+    "packages/e2e": {
+      "name": "@aimen/e2e",
+      "version": "0.1.0",
+      "dependencies": {
+        "@aimen/acp-bus": "workspace:*",
+        "@aimen/anytype-gateway": "workspace:*",
+      },
+    },
+  },
+  "packages": {
+    "@aimen/acp-bus": ["@aimen/acp-bus@workspace:packages/acp-bus"],
+
+    "@aimen/agents": ["@aimen/agents@workspace:packages/agents"],
+
+    "@aimen/anytype-gateway": ["@aimen/anytype-gateway@workspace:packages/anytype-gateway"],
+
+    "@aimen/auth": ["@aimen/auth@workspace:packages/auth"],
+
+    "@aimen/dashboard": ["@aimen/dashboard@workspace:apps/dashboard"],
+
+    "@aimen/e2e": ["@aimen/e2e@workspace:packages/e2e"],
+  }
+}

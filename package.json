@@ -1,0 +1,14 @@
+{
+  "name": "aimen",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel 'packages/*/dev' 'apps/*/dev'",
+    "build": "bun run --parallel 'packages/*/build' 'apps/*/build'",
+    "lint": "bun run --parallel 'packages/*/lint' 'apps/*/lint'"
+  }
+}

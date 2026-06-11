@@ -1,6 +1,13 @@
 ---
 name: architect
 description: 指导复杂软件系统的设计、演化与评审。当需要进行架构规划、技术方案评审、跨领域抽象建模或评估系统长期演化能力时使用。
+version: 1.0.0
+author: aimen
+license: MIT
+metadata:
+  hermes:
+    tags: [architecture, design, review, software-engineering, system-design]
+    related_skills: [plan, writing-plans, project-reconnaissance]
 ---
 
 # The Architect

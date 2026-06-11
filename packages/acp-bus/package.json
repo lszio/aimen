@@ -1,0 +1,13 @@
+{
+  "name": "@aimen/acp-bus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "dev": "echo 'acp-bus: dev'",
+    "build": "tsc",
+    "lint": "echo 'acp-bus: lint'"
+  }
+}

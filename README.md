@@ -25,16 +25,23 @@ npx skills@latest add lszio/aimen
 
 - *（当前版本以技能为主，智能体正在持续增加中）*
 
-## 📁 目录结构
-
-```
-aimen/
-├── skills/          # 技能定义文件
-│   └── architect/   # 示例：架构师技能
-├── agents/          # 智能体定义文件 (.md)
-├── references/      # 平台适配参考文档
-└── README.md
-```
+|## 📁 目录结构
+|
+|```
+|aimen/
+|├── apps/             # 应用层
+|│   └── dashboard/    # Astro SSR dashboard (stub)
+|├── packages/         # 共享包 (Bun workspace)
+|│   ├── acp-bus/        # ACP protocol router
+|│   ├── anytype-gateway/# MCP server for Anytype
+|│   ├── agents/         # Agent orchestration
+|│   └── auth/           # JWT authentication
+|├── skills/           # 技能定义文件
+|│   └── architect/    # 示例：架构师技能
+|├── package.json      # Bun workspace root
+|├── tsconfig.json     # TypeScript config
+|└── .env.example      # Environment variables
+|```
 
 ## 🤝 贡献
 
