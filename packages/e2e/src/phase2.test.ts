@@ -104,7 +104,7 @@ beforeAll(async () => {
     });
     if (!response.ok) {
       const body = await response.text();
-      console.error(`[HTTP POST] Error: ${response.status} ${body}`);
+      throw new Error(`Watcher POST failed (${response.status}): ${body}`);
     }
   };
 });

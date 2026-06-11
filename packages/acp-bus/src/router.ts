@@ -397,7 +397,7 @@ export class MessageRouter extends EventTarget {
         AcpMessageType.Error,
         'router',
         envelope.senderId,
-        errorPayload as unknown as Record<string, unknown>,
+        { ...errorPayload } as Record<string, unknown>,
       );
 
       this.dispatchEvent(new AcpBusEvent('route:error', { envelope, error: errorPayload }));
@@ -417,7 +417,7 @@ export class MessageRouter extends EventTarget {
         AcpMessageType.Error,
         'router',
         envelope.senderId,
-        errorPayload as unknown as Record<string, unknown>,
+        { ...errorPayload } as Record<string, unknown>,
       );
 
       this.dispatchEvent(new AcpBusEvent('route:error', { envelope, error: errorPayload }));

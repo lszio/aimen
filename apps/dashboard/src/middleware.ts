@@ -17,7 +17,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   // API 路由单独处理
   if (pathname.startsWith('/api/')) {
-    if (pathname === '/api/auth/login' || pathname === '/api/auth/logout') {
+    if (pathname === '/api/auth/login' || pathname === '/api/auth/logout' || pathname === '/api/auth/refresh') {
       return next();
     }
     // 其他 API 从 Authorization header 验证 (ACP 内部通信)
@@ -36,15 +36,51 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
   }
 
-  // 页面路由：检查 cookie
-  const cookie = context.cookies.get('aimen_token');
-  if (!cookie?.value) {
+  // 页面路由：检查 access token
+  const tokenCookie = context.cookies.get('aimen_token');
+  if (!tokenCookie?.value) {
+    // 没有 access token → 尝试用 refresh token 自动刷新
+    const refreshCookie = context.cookies.get('aimen_refresh');
+    if (refreshCookie?.value) {
+      const result = await auth.refresh(refreshCookie.value);
+      if (result) {
+        // 刷新成功 — 设置新 access token
+        context.cookies.set('aimen_token', result.token, {
+          path: '/',
+          httpOnly: true,
+          sameSite: 'lax',
+          maxAge: 60 * 60, // 1 hour
+        });
+        context.locals.user = result.payload;
+        return next();
+      }
+      // 刷新失败 — refresh token 也过期了，清除
+      context.cookies.delete('aimen_refresh', { path: '/api/auth/refresh' });
+    }
+    // 没有 refresh token 或刷新失败 → 跳转登录
     return context.redirect('/login');
   }
 
-  const user = await auth.verify(cookie.value);
+  // 验证 access token
+  const user = await auth.verify(tokenCookie.value);
   if (!user) {
-    context.cookies.delete('aimen_token');
+    // Access token 过期 — 尝试刷新
+    const refreshCookie = context.cookies.get('aimen_refresh');
+    if (refreshCookie?.value) {
+      const result = await auth.refresh(refreshCookie.value);
+      if (result) {
+        context.cookies.set('aimen_token', result.token, {
+          path: '/',
+          httpOnly: true,
+          sameSite: 'lax',
+          maxAge: 60 * 60, // 1 hour
+        });
+        context.locals.user = result.payload;
+        return next();
+      }
+      context.cookies.delete('aimen_refresh', { path: '/api/auth/refresh' });
+    }
+    context.cookies.delete('aimen_token', { path: '/' });
     return context.redirect('/login');
   }
 

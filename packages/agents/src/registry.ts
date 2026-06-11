@@ -16,9 +16,61 @@ import {
   MessageRouter,
   type AcpMessageEnvelope,
   type AcpAgentInfo,
+  AcpBusEvent,
 } from '@aimen/acp-bus';
 
 import type { AimenAgent } from './aimen-agent.js';
+
+// ---------------------------------------------------------------------------
+// RemoteAgent — 远程代理适配器
+// ---------------------------------------------------------------------------
+
+/**
+ * 远程代理占位适配器
+ *
+ * 当 AgentRegistry 收到远程 AgentAnnounce 时，AgentManager 自动创建一个 RemoteAgent
+ * 实例加入 #agents 映射。所有目标为该远程 agent 的消息通过 MessageRouter 的 HTTP 转发处理，
+ * RemoteAgent 的 handleMessage 仅做记录。
+ */
+class RemoteAgent implements AimenAgent {
+  readonly agentId: string;
+  readonly name: string;
+  readonly role: string;
+  readonly capabilities: string[];
+  readonly isRemote: boolean = true;
+  protected router?: MessageRouter;
+
+  constructor(info: AcpAgentInfo, router?: MessageRouter) {
+    this.agentId = info.id;
+    this.name = info.name;
+    this.role = info.role;
+    this.capabilities = [...info.capabilities];
+    this.router = router;
+  }
+
+  connect(_router: MessageRouter): void {
+    // Remote 不需要本地 connect
+  }
+
+  getStatus(): { agentId: string; name: string; role: string; status: string; capabilities: string[] } {
+    return {
+      agentId: this.agentId,
+      name: this.name,
+      role: this.role,
+      status: 'online',
+      capabilities: [...this.capabilities],
+    };
+  }
+
+  async handleMessage(_envelope: AcpMessageEnvelope): Promise<AcpMessageEnvelope | null> {
+    // Remote agent handles via HTTP transport, not local
+    return null;
+  }
+
+  async execute(_goal: string, _context: Record<string, unknown>): Promise<unknown> {
+    return { status: 'forwarded', note: '远程代理 — 结果由远程处理' };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // AgentManager
@@ -61,7 +113,30 @@ export class AgentManager {
     if (router) {
       this.#unsubscribe = router.onMessage((envelope) => this.#handleAsHandler(envelope));
     }
+
+    // 监听 registry 事件：远程 agent 自动注册到本地映射
+    this.#registryListener = (e: Event) => {
+      const event = e as AcpBusEvent<{ agent: AcpAgentInfo }>;
+      const agentInfo = event.detail?.agent;
+      if (!agentInfo) return;
+
+      // 跳过已注册的本地 agent
+      if (this.#agents.has(agentInfo.id)) return;
+
+      // 自动创建 RemoteAgent 占位
+      const remote = new RemoteAgent(agentInfo, router);
+      this.#agents.set(agentInfo.id, remote);
+
+      const existing = this.#roles.get(agentInfo.role) ?? [];
+      if (!existing.includes(agentInfo.id)) {
+        existing.push(agentInfo.id);
+        this.#roles.set(agentInfo.role, existing);
+      }
+    };
+    this.registry.addEventListener('agent:register', this.#registryListener);
   }
+
+  #registryListener: ((e: Event) => void) | null = null;
 
   /**
    * 作为 MessageRouter handler 处理消息
@@ -194,6 +269,10 @@ export class AgentManager {
     if (this.#unsubscribe) {
       this.#unsubscribe();
       this.#unsubscribe = null;
+    }
+    if (this.#registryListener) {
+      this.registry.removeEventListener('agent:register', this.#registryListener);
+      this.#registryListener = null;
     }
   }
 }

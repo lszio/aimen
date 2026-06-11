@@ -197,7 +197,7 @@ export abstract class AimenAgent {
         AcpMessageType.TaskResult,
         this.agentId,
         envelope.senderId,
-        resultPayload as unknown as Record<string, unknown>,
+        resultPayload as Record<string, unknown>,
       );
     } catch (err) {
       this.#status = AgentStatus.Error;
@@ -212,7 +212,7 @@ export abstract class AimenAgent {
         AcpMessageType.TaskResult,
         this.agentId,
         envelope.senderId,
-        errorPayload as unknown as Record<string, unknown>,
+        errorPayload as Record<string, unknown>,
       );
     }
   }
