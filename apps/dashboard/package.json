@@ -6,8 +6,20 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "dev": "echo 'dashboard: dev'",
-    "build": "tsc",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
     "lint": "echo 'dashboard: lint'"
+  },
+  "dependencies": {
+    "@astrojs/node": "^10.0.0",
+    "@astrojs/react": "^4.0.0",
+    "astro": "^6.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@aimen/auth": "workspace:*",
+    "@aimen/acp-bus": "workspace:*"
   }
 }

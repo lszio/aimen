@@ -1,0 +1,94 @@
+---
+// Login page — dark-themed centered form
+// Submits POST to /api/auth/login, redirects to / on success
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>aimen — Login</title>
+    <style>
+      @import "tailwindcss";
+    </style>
+  </head>
+  <body class="bg-neutral-950 text-white min-h-screen flex items-center justify-center">
+    <div class="w-full max-w-sm px-6">
+      <!-- Logo / Title -->
+      <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold tracking-tight">aimen</h1>
+        <p class="text-neutral-400 text-sm mt-1">Agent Orchestration Hub</p>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label for="username" class="block text-sm font-medium text-neutral-300 mb-1">Username</label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            required
+            autocomplete="username"
+            class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+            placeholder="Enter username"
+          />
+        </div>
+
+        <div>
+          <label for="password" class="block text-sm font-medium text-neutral-300 mb-1">Password</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            required
+            autocomplete="current-password"
+            class="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+            placeholder="Enter password"
+          />
+        </div>
+
+        <div id="error-message" class="text-red-400 text-sm hidden"></div>
+
+        <button
+          type="submit"
+          class="w-full py-2 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg transition-colors text-sm"
+        >
+          Sign in
+        </button>
+      </form>
+    </div>
+
+    <script>
+      const form = document.getElementById('login-form');
+      const errorEl = document.getElementById('error-message');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errorEl.classList.add('hidden');
+
+        const formData = new FormData(form);
+
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+            window.location.href = '/';
+          } else {
+            errorEl.textContent = data.error || 'Login failed';
+            errorEl.classList.remove('hidden');
+          }
+        } catch (err) {
+          errorEl.textContent = 'Network error — please try again';
+          errorEl.classList.remove('hidden');
+        }
+      });
+    </script>
+  </body>
+</html>

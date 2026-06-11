@@ -9,7 +9,13 @@
  * @module @aimen/acp-bus/transport-http
  */
 
-import { AcpMessageType, type AcpMessageEnvelope } from './types.js';
+import {
+  AcpMessageType,
+  type AcpMessageEnvelope,
+  type AcpAgentInfo,
+  type AgentAnnouncePayload,
+  type AgentLeavePayload,
+} from './types.js';
 import type { AgentRegistry, MessageRouter } from './router.js';
 
 // ---------------------------------------------------------------------------
@@ -135,12 +141,16 @@ function handleOptions(): Response {
  * 基于 Bun.serve 的 HTTP 传输层
  *
  * 将 ACP 消息协议映射到 RESTful HTTP 端点，提供：
- * - POST /acp/task          — 提交任务（TaskSubmit）
- * - POST /acp/message       — 发送代理间消息（Message）
- * - GET  /acp/agents        — 获取所有代理列表
- * - GET  /acp/agents/:id    — 获取指定代理详情
- * - GET  /health            — 健康检查
- * - POST /acp/agents/:id/cancel — 取消指定代理的任务（TaskCancel）
+ * - POST /acp/task               — 提交任务（TaskSubmit）
+ * - POST /acp/message            — 路由任意类型的 ACP 消息
+ * - POST /acp/announce           — 注册外部代理（AgentAnnounce）
+ * - POST /acp/leave              — 外部代理离线注销（AgentLeave）
+ * - POST /acp/ping               — 更新外部代理心跳
+ * - GET  /acp/agents             — 获取所有代理列表
+ * - GET  /acp/agents/:id         — 获取指定代理详情
+ * - GET  /acp/agents/:id/heartbeat — 获取指定代理心跳时间戳
+ * - POST /acp/agents/:id/cancel  — 取消指定代理的任务（TaskCancel）
+ * - GET  /health                 — 健康检查
  *
  * 所有端点支持 CORS，返回标准化的 JSON 格式：{ success, data?, error? }
  *
@@ -281,20 +291,38 @@ export class HttpTransport {
         return await this.#handleMessage(request);
       }
 
+      // ---- POST /acp/announce ----
+      if (method === 'POST' && path === '/acp/announce') {
+        return await this.#handleAnnounce(request);
+      }
+
+      // ---- POST /acp/leave ----
+      if (method === 'POST' && path === '/acp/leave') {
+        return await this.#handleLeave(request);
+      }
+
+      // ---- POST /acp/ping ----
+      if (method === 'POST' && path === '/acp/ping') {
+        return await this.#handlePing(request);
+      }
+
       // ---- GET /acp/agents ----
       if (method === 'GET' && path === '/acp/agents') {
         return this.#handleListAgents();
       }
 
-      // ---- GET /acp/agents/:id 或 POST /acp/agents/:id/cancel ----
+      // ---- GET /acp/agents/:id ----
       const idMatch = matchPath('/acp/agents/:id', path);
-      if (idMatch) {
-        if (method === 'GET') {
-          return this.#handleGetAgent(idMatch.id);
+      if (idMatch && method === 'GET') {
+        // 检查是否有更具体的子路径
+        const hbMatch = matchPath('/acp/agents/:id/heartbeat', path);
+        if (hbMatch && method === 'GET') {
+          return this.#handleHeartbeat(hbMatch.id);
         }
-        // fall through to nested path matching
+        return this.#handleGetAgent(idMatch.id);
       }
 
+      // ---- POST /acp/agents/:id/cancel ----
       const cancelMatch = matchPath('/acp/agents/:id/cancel', path);
       if (cancelMatch && method === 'POST') {
         return await this.#handleCancelTask(request, cancelMatch.id);
@@ -345,10 +373,10 @@ export class HttpTransport {
   }
 
   /**
-   * 处理 POST /acp/message — 发送代理间消息
+   * 处理 POST /acp/message — 路由任意类型的消息
    *
-   * 解析请求体为 AcpMessageEnvelope，强制设置 messageType 为 Message，
-   * 然后通过 MessageRouter 进行路由。
+   * 解析请求体为 AcpMessageEnvelope，保留请求中原有的 messageType，
+   * 然后通过 MessageRouter 进行路由。不再强制覆盖 messageType 为 Message。
    *
    * @param request - 传入的 HTTP 请求
    * @returns 路由结果或错误响应
@@ -360,7 +388,6 @@ export class HttpTransport {
     }
 
     const envelope = body as unknown as AcpMessageEnvelope;
-    envelope.messageType = AcpMessageType.Message;
 
     const result = await this.#options.router.route(envelope);
     return result.success
@@ -440,6 +467,185 @@ export class HttpTransport {
           (result.response?.payload as { message?: string })?.message ?? '取消任务路由失败',
           502,
         );
+  }
+
+  // -----------------------------------------------------------------------
+  // 外部代理注册端点
+  // -----------------------------------------------------------------------
+
+  /**
+   * 处理 POST /acp/announce — 注册外部代理
+   *
+   * 接受 AgentAnnounce 消息信封，从 payload 中提取代理信息，
+   * 通过 AgentRegistry.register() 将代理注册到注册中心。
+   * 支持外部 ACP 兼容代理（如独立 Hermes 实例、Python 代理等）的自主上线。
+   *
+   * @param request - 传入的 HTTP 请求，需包含 AcpMessageEnvelope 格式的 JSON 体，
+   *                  其中 messageType 应为 AgentAnnounce，payload 需包含 agent 字段
+   * @returns 包含注册结果和代理信息的成功响应，或错误响应
+   *
+   * @example
+   * ```json
+   * POST /acp/announce
+   * {
+   *   "protocol": "acp/1.0",
+   *   "messageId": "uuid",
+   *   "senderId": "agent-xyz",
+   *   "targetId": "router",
+   *   "messageType": "AgentAnnounce",
+   *   "payload": {
+   *     "agent": {
+   *       "id": "agent-xyz",
+   *       "name": "助手甲",
+   *       "role": "assistant",
+   *       "status": "online",
+   *       "capabilities": ["chat", "search"],
+   *       "lastHeartbeat": "2025-01-01T00:00:00.000Z"
+   *     }
+   *   },
+   *   "timestamp": "2025-01-01T00:00:00.000Z"
+   * }
+   * ```
+   */
+  async #handleAnnounce(request: Request): Promise<Response> {
+    const body = await this.#parseBody(request);
+    if (!body) {
+      return jsonError('请求体为空或 JSON 格式无效');
+    }
+
+    const envelope = body as unknown as AcpMessageEnvelope;
+
+    // 通过 MessageRouter.route 自动处理 AgentAnnounce 注册
+    const result = await this.#options.router.route(envelope);
+
+    if (!result.success) {
+      return jsonError(
+        (result.response?.payload as { message?: string })?.message ?? '代理注册失败',
+        502,
+      );
+    }
+
+    // 返回已注册的代理信息（如果有）
+    const announcePayload = envelope.payload as unknown as AgentAnnouncePayload;
+    const agentInfo = announcePayload?.agent;
+    return jsonSuccess({
+      agent: agentInfo,
+    });
+  }
+
+  /**
+   * 处理 POST /acp/leave — 外部代理离线注销
+   *
+   * 接受 { agentId, reason? } 格式的请求体，通过 AgentRegistry.unregister()
+   * 从注册中心移除指定代理。调用后该代理将不再出现在 /acp/agents 列表中，
+   * 且后续发往该代理的消息将路由失败。
+   *
+   * @param request - 传入的 HTTP 请求，JSON 体需包含 agentId 字段，可选 reason 字段
+   * @returns 包含注销结果的成功响应，或错误响应
+   *
+   * @example
+   * ```json
+   * POST /acp/leave
+   * {
+   *   "agentId": "agent-xyz",
+   *   "reason": "shutting down"
+   * }
+   * ```
+   */
+  async #handleLeave(request: Request): Promise<Response> {
+    const body = await this.#parseBody(request);
+    if (!body) {
+      return jsonError('请求体为空或 JSON 格式无效');
+    }
+
+    const agentId = body.agentId as string | undefined;
+    if (!agentId) {
+      return jsonError('缺少必填字段: agentId');
+    }
+
+    const registry = this.#options.registry;
+    const removed = registry.unregister(agentId);
+
+    if (!removed) {
+      return jsonError(`未找到代理: ${agentId}`, 404);
+    }
+
+    return jsonSuccess({
+      agentId,
+      unregistered: true,
+      reason: (body.reason as string) ?? undefined,
+    });
+  }
+
+  /**
+   * 处理 POST /acp/ping — 更新外部代理心跳
+   *
+   * 接受 { agentId } 格式的请求体，通过 AgentRegistry.setStatus()
+   * 将指定代理的状态保持为 "online" 并刷新 lastHeartbeat 时间戳。
+   * 外部代理应定期调用此端点（如每 30 秒）以维持在线状态。
+   *
+   * @param request - 传入的 HTTP 请求，JSON 体需包含 agentId 字段
+   * @returns 包含心跳更新时间戳的成功响应，或错误响应
+   *
+   * @example
+   * ```json
+   * POST /acp/ping
+   * {
+   *   "agentId": "agent-xyz"
+   * }
+   * ```
+   */
+  async #handlePing(request: Request): Promise<Response> {
+    const body = await this.#parseBody(request);
+    if (!body) {
+      return jsonError('请求体为空或 JSON 格式无效');
+    }
+
+    const agentId = body.agentId as string | undefined;
+    if (!agentId) {
+      return jsonError('缺少必填字段: agentId');
+    }
+
+    const registry = this.#options.registry;
+    const updated = registry.setStatus(agentId, 'online');
+
+    if (!updated) {
+      return jsonError(`未找到代理: ${agentId}，请先通过 POST /acp/announce 注册`, 404);
+    }
+
+    const agent = registry.get(agentId);
+    return jsonSuccess({
+      agentId,
+      status: 'online',
+      lastHeartbeat: agent?.lastHeartbeat,
+    });
+  }
+
+  /**
+   * 处理 GET /acp/agents/:id/heartbeat — 获取指定代理的心跳时间戳
+   *
+   * 查询 AgentRegistry 中指定代理的 lastHeartbeat 字段，
+   * 返回代理 ID 和最近一次心跳更新时间戳。
+   * 可用于监控组件判断代理是否超时失联。
+   *
+   * @param agentId - 代理 ID
+   * @returns 包含代理心跳信息的成功响应，或 404 错误
+   *
+   * @example
+   * ```json
+   * GET /acp/agents/agent-xyz/heartbeat
+   * → { "success": true, "data": { "agentId": "agent-xyz", "lastHeartbeat": "2025-01-01T00:00:00.000Z" } }
+   * ```
+   */
+  #handleHeartbeat(agentId: string): Response {
+    const agent = this.#options.registry.get(agentId);
+    if (!agent) {
+      return jsonError(`未找到代理: ${agentId}`, 404);
+    }
+    return jsonSuccess({
+      agentId: agent.id,
+      lastHeartbeat: agent.lastHeartbeat,
+    });
   }
 
   // -----------------------------------------------------------------------

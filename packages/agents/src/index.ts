@@ -23,6 +23,9 @@ export type { CodeAnalysis, RefactorSuggestion } from './coder.js';
 export { ResearcherAgent } from './researcher.js';
 export type { SearchResult, SynthesizedReport } from './researcher.js';
 
+// Hermes 桥接代理
+export { HermesBridgeAgent } from './hermes-bridge.js';
+
 // 注册管理器
 export { AgentManager } from './registry.js';
 
