@@ -1,0 +1,22 @@
+{
+  "name": "@aimen/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "aimen": "./src/index.ts"
+  },
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "dev": "echo 'cli: dev'",
+    "build": "tsc",
+    "lint": "echo 'cli: lint'"
+  },
+  "dependencies": {
+    "@aimen/acp-bus": "workspace:*",
+    "@aimen/agents": "workspace:*",
+    "@aimen/anytype-gateway": "workspace:*",
+    "@aimen/auth": "workspace:*"
+  }
+}

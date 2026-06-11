@@ -41,3 +41,11 @@ export type {
 
 export { HttpTransport } from './transport-http.js';
 export type { HttpTransportOptions } from './transport-http.js';
+
+export { PersistedAgentRegistry } from './persistence.js';
+
+// ---------------------------------------------------------------------------
+// 错误处理与重试机制
+// ---------------------------------------------------------------------------
+export { AimenError, AimenErrorCode, retryWithBackoff } from './errors.js';
+export type { AimenRetryOptions } from './errors.js';
