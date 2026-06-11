@@ -18,6 +18,12 @@ import { AimenAgent, AgentStatus } from './aimen-agent.js';
 /** Hermes Agent 默认 API 地址 */
 const DEFAULT_HERMES_API_URL = 'http://localhost:3131';
 
+/** Hermes Agent 默认健康检查端点路径 */
+const DEFAULT_HEALTH_PATH = '/api/health';
+
+/** Hermes Agent 默认任务执行端点路径 */
+const DEFAULT_EXECUTE_PATH = '/api/chat';
+
 // ---------------------------------------------------------------------------
 // HermesBridgeAgent
 // ---------------------------------------------------------------------------
@@ -47,6 +53,12 @@ export class HermesBridgeAgent extends AimenAgent {
   /** Hermes Agent API 的基础 URL */
   readonly hermesApiUrl: string;
 
+  /** 健康检查端点路径 */
+  readonly healthPath: string;
+
+  /** 任务执行端点路径 */
+  readonly executePath: string;
+
   /** 上一次健康检查的结果缓存 */
   #lastHealthCheck: { connected: boolean; status: string } | null = null;
 
@@ -54,16 +66,22 @@ export class HermesBridgeAgent extends AimenAgent {
    * @param agentId       - 代理唯一标识
    * @param name          - 代理显示名称（默认 "Hermes Bridge"）
    * @param hermesApiUrl  - Hermes Agent API 地址（默认 http://localhost:3131）
+   * @param healthPath    - 健康检查端点路径（默认 /api/health）
+   * @param executePath   - 任务执行端点路径（默认 /api/chat）
    * @param router        - 可选的 ACP MessageRouter 引用
    */
   constructor(
     agentId: string,
     name: string = 'Hermes Bridge',
     hermesApiUrl?: string,
+    healthPath?: string,
+    executePath?: string,
     router?: import('./aimen-agent.js').AimenAgent['router'],
   ) {
     super(agentId, name, 'hermes', ['hermes-bridge', 'task-forwarding', 'api-gateway'], router);
     this.hermesApiUrl = hermesApiUrl ?? DEFAULT_HERMES_API_URL;
+    this.healthPath = healthPath ?? DEFAULT_HEALTH_PATH;
+    this.executePath = executePath ?? DEFAULT_EXECUTE_PATH;
   }
 
   // -------------------------------------------------------------------------
@@ -90,31 +108,24 @@ export class HermesBridgeAgent extends AimenAgent {
   async hermesHealthCheck(): Promise<{ connected: boolean; status: string }> {
     try {
       const baseUrl = this.hermesApiUrl.replace(/\/+$/, '');
-      const endpoints = [
-        `${baseUrl}/api/health`,
-        `${baseUrl}/health`,
-        `${baseUrl}/`,
-      ];
+      const url = `${baseUrl}${this.healthPath}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
 
-      for (const url of endpoints) {
-        const response = await fetch(url, {
-          method: 'GET',
-          signal: AbortSignal.timeout(3000),
-        });
-
-        if (response.ok) {
-          const result = { connected: true, status: `Hermes Agent 在线 (${url} — ${response.status})` };
-          this.#lastHealthCheck = result;
-          return result;
-        }
+      if (response.ok) {
+        const result = { connected: true, status: `Hermes Agent 在线 (${url} — ${response.status})` };
+        this.#lastHealthCheck = result;
+        return result;
       }
 
-      const result = { connected: false, status: 'Hermes Agent 响应非预期状态码' };
+      const result = { connected: false, status: `Hermes Agent 响应非预期状态码 (${url} — ${response.status})` };
       this.#lastHealthCheck = result;
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const result = { connected: false, status: `Hermes Agent 不可达: ${message}` };
+      const result = { connected: false, status: `Hermes Agent 不可达 (${this.hermesApiUrl}${this.healthPath}): ${message}` };
       this.#lastHealthCheck = result;
       return result;
     }
@@ -149,43 +160,26 @@ export class HermesBridgeAgent extends AimenAgent {
    */
   async forwardToHermes(prompt: string): Promise<string> {
     const baseUrl = this.hermesApiUrl.replace(/\/+$/, '');
-    const body = JSON.stringify({
-      prompt,
-      message: prompt,
-      input: prompt,
-    });
+    const url = `${baseUrl}${this.executePath}`;
 
-    const endpoints = [
-      { url: `${baseUrl}/api/chat`, body: JSON.stringify({ prompt }) },
-      { url: `${baseUrl}/api/execute`, body: JSON.stringify({ prompt }) },
-      { url: `${baseUrl}/api/v1/chat`, body: JSON.stringify({ message: prompt }) },
-      { url: `${baseUrl}/api/run`, body: JSON.stringify({ input: prompt }) },
-    ];
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+        signal: AbortSignal.timeout(30000),
+      });
 
-    let lastError: string | null = null;
-
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: endpoint.body,
-          signal: AbortSignal.timeout(30000),
-        });
-
-        if (response.ok) {
-          const text = await response.text();
-          return text || '(Hermes 返回空响应)';
-        }
-
-        lastError = `状态码 ${response.status}`;
-      } catch {
-        lastError = '连接失败';
-        continue;
+      if (response.ok) {
+        const text = await response.text();
+        return text || '(Hermes 返回空响应)';
       }
-    }
 
-    throw new Error(`无法转发至 Hermes Agent (${this.hermesApiUrl}): ${lastError}`);
+      throw new Error(`Hermes 返回状态码 ${response.status}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`无法转发至 Hermes Agent (${url}): ${message}`);
+    }
   }
 
   /**

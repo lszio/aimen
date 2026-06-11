@@ -119,3 +119,26 @@ export interface AnytypeGatewayConfig {
   /** 轮询间隔（毫秒），默认 5000 */
   pollIntervalMs?: number;
 }
+
+// ---------------------------------------------------------------------------
+// AnytypeClient 接口
+// ---------------------------------------------------------------------------
+
+/**
+ * Anytype 存储客户端接口
+ *
+ * 抽象 Anytype 对象存储的基本操作，支持 Mock 和真实 REST API 两种实现。
+ */
+export interface AnytypeClient {
+  /** 获取所有对象 */
+  listObjects(): AnytypeObject[];
+
+  /** 根据 ID 获取单个对象 */
+  getObject(id: string): AnytypeObject | undefined;
+
+  /** 设置/替换一个对象 */
+  setObject(id: string, obj: AnytypeObject): void;
+
+  /** 部分更新已有对象 */
+  updateObject(id: string, updates: Partial<AnytypeObject>): void;
+}

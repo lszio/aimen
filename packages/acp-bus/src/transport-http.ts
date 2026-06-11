@@ -13,8 +13,6 @@ import {
   AcpMessageType,
   type AcpMessageEnvelope,
   type AcpAgentInfo,
-  type AgentAnnouncePayload,
-  type AgentLeavePayload,
 } from './types.js';
 import type { AgentRegistry, MessageRouter } from './router.js';
 
@@ -138,6 +136,26 @@ function handleOptions(): Response {
 // ---------------------------------------------------------------------------
 
 /**
+ * 判断 JSON 解析结果是否为有效的 AcpMessageEnvelope
+ *
+ * 校验所有必需字段存在且类型正确，校验通过后 TS 类型收窄为 AcpMessageEnvelope。
+ */
+function isValidEnvelope(body: unknown): body is AcpMessageEnvelope {
+  if (typeof body !== 'object' || body === null) return false;
+  const b = body as Record<string, unknown>;
+  return (
+    typeof b.protocol === 'string' &&
+    typeof b.messageId === 'string' &&
+    typeof b.senderId === 'string' &&
+    typeof b.targetId === 'string' &&
+    typeof b.messageType === 'string' &&
+    typeof b.payload === 'object' &&
+    b.payload !== null &&
+    typeof b.timestamp === 'string'
+  );
+}
+
+/**
  * 基于 Bun.serve 的 HTTP 传输层
  *
  * 将 ACP 消息协议映射到 RESTful HTTP 端点，提供：
@@ -176,6 +194,9 @@ export class HttpTransport {
 
   /** 服务器启动时间戳（毫秒） */
   #startTime = 0;
+
+  /** 默认请求超时时间（毫秒） */
+  static readonly TIMEOUT_MS = 30_000;
 
   /**
    * @param options - 构造选项，包含端口号、代理注册中心和消息路由器
@@ -356,7 +377,7 @@ export class HttpTransport {
    */
   async #handleTaskSubmit(request: Request): Promise<Response> {
     const body = await this.#parseBody(request);
-    if (!body) {
+    if (!body || !isValidEnvelope(body)) {
       return jsonError('请求体为空或 JSON 格式无效');
     }
 
@@ -383,7 +404,7 @@ export class HttpTransport {
    */
   async #handleMessage(request: Request): Promise<Response> {
     const body = await this.#parseBody(request);
-    if (!body) {
+    if (!body || !isValidEnvelope(body)) {
       return jsonError('请求体为空或 JSON 格式无效');
     }
 
@@ -509,7 +530,7 @@ export class HttpTransport {
    */
   async #handleAnnounce(request: Request): Promise<Response> {
     const body = await this.#parseBody(request);
-    if (!body) {
+    if (!body || !isValidEnvelope(body)) {
       return jsonError('请求体为空或 JSON 格式无效');
     }
 
@@ -526,8 +547,7 @@ export class HttpTransport {
     }
 
     // 返回已注册的代理信息（如果有）
-    const announcePayload = envelope.payload as unknown as AgentAnnouncePayload;
-    const agentInfo = announcePayload?.agent;
+    const agentInfo = envelope.payload?.agent as AcpAgentInfo | undefined;
     return jsonSuccess({
       agent: agentInfo,
     });

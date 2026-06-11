@@ -99,17 +99,32 @@ async function handleStart(): Promise<void> {
 
   // 优雅退出
   let shuttingDown = false;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log('');
     info('正在关闭服务...');
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    watcher?.stop();
     transport.stop();
     registry.close();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // 心跳监控 — 每分钟检查一次，超时 60 秒的远程 agent 自动置为 offline
+  const HEARTBEAT_TIMEOUT_MS = 60_000;
+  heartbeatInterval = setInterval(() => {
+    for (const agent of registry.list()) {
+      const elapsed = Date.now() - new Date(agent.lastHeartbeat).getTime();
+      if (elapsed > HEARTBEAT_TIMEOUT_MS && agent.status === 'online') {
+        registry.setStatus(agent.id, 'offline');
+        info(`心跳超时: ${agent.name} (${agent.id}) 已自动置为离线`);
+      }
+    }
+  }, 30_000);
 
   await new Promise(() => {});
 }

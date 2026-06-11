@@ -16,6 +16,7 @@ export type {
   AnytypeTaskStatus,
   AnytypeJournalObject,
   AnytypeGatewayConfig,
+  AnytypeClient,
 } from './types.js';
 
 // 网关主入口

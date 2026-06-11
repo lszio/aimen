@@ -8,7 +8,7 @@
  * @module @aimen/anytype-gateway/mock-client
  */
 
-import type { AnytypeObject } from './types.js';
+import type { AnytypeObject, AnytypeClient } from './types.js';
 
 /**
  * MockAnytypeClient 配置选项
@@ -24,7 +24,7 @@ export interface MockAnytypeClientOptions {
  * 使用 Map 存储 Anytype 对象，提供基础的 CRUD 操作。
  * 所有操作均在内存中完成，不会产生网络请求。
  */
-export class MockAnytypeClient {
+export class MockAnytypeClient implements AnytypeClient {
   private objects: Map<string, AnytypeObject>;
 
   /**
