@@ -23,7 +23,7 @@ import {
   JournalHandler,
 } from '@aimen/anytype-gateway';
 import type { AnytypeTaskObject, AnytypeJournalObject } from '@aimen/anytype-gateway';
-import { ArchitectAgent, AgentManager } from '@aimen/agents';
+import { ArchitectAgent, AgentManager, AgentStatus } from '@aimen/agents';
 
 // ---------------------------------------------------------------------------
 // Test constants
@@ -66,30 +66,22 @@ beforeAll(async () => {
   registry = new AgentRegistry();
   router = new MessageRouter(registry);
 
-  // 2. Create AgentManager + ArchitectAgent
-  agentManager = new AgentManager(registry);
+  // 2. Create AgentManager — pass router so it auto-registers as message handler
+  agentManager = new AgentManager(registry, router);
   architect = new ArchitectAgent(AGENT_ID, '架构师');
   agentManager.registerAgent(architect, AGENT_ROLE);
 
-  // 3. Register the AgentManager as the message handler on the router.
-  //    When a TaskSubmit comes in, we route it through AgentManager.handleTask()
-  //    which dispatches to the ArchitectAgent. The agent returns a TaskResult.
-  router.onMessage(async (envelope) => {
-    if (envelope.messageType === AcpMessageType.TaskSubmit) {
-      const response = await agentManager.handleTask(envelope);
-
-      // Capture the TaskResult for the test to inspect
-      if (response.messageType === AcpMessageType.TaskResult) {
-        lastTaskResult = response;
-        if (taskResultResolve) {
-          taskResultResolve(response);
-          taskResultResolve = null;
-        }
+  // 3. Capture TaskResult events from router
+  router.addEventListener('route:success', (e: Event) => {
+    const detail = (e as CustomEvent).detail as { response: AcpMessageEnvelope };
+    if (detail.response?.messageType === AcpMessageType.TaskResult ||
+        detail.response?.messageType === AcpMessageType.Error) {
+      lastTaskResult = detail.response;
+      if (taskResultResolve) {
+        taskResultResolve(detail.response);
+        taskResultResolve = null;
       }
-
-      return response;
     }
-    return null;
   });
 
   // 4. Start HTTP transport

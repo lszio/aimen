@@ -11,7 +11,6 @@
 
 import { HttpTransport, MessageRouter, PersistedAgentRegistry } from '@aimen/acp-bus';
 import { ArchitectAgent, CoderAgent, AgentManager } from '@aimen/agents';
-import { AnytypeGateway } from '@aimen/anytype-gateway';
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -62,7 +61,8 @@ async function handleStart(): Promise<void> {
   await transport.start();
   success(`ACP HTTP 服务已启动 -> http://localhost:${port}`);
 
-  const agentManager = new AgentManager(registry);
+  // AgentManager 自动注册为 MessageRouter 的 handler
+  const agentManager = new AgentManager(registry, router);
   const architect = new ArchitectAgent('architect-1', 'Architect', router);
   agentManager.registerAgent(architect, 'architect');
   success(`已注册: ${architect.name} (${architect.agentId})`);
@@ -73,16 +73,20 @@ async function handleStart(): Promise<void> {
 
   success(`共 ${registry.size} 个代理在线`);
 
+  // Anytype 网关（连接到 ACP Bus）
   if (process.env.ANYTYPE_API_KEY) {
-    const gateway = new AnytypeGateway(
-      {
-        apiKey: process.env.ANYTYPE_API_KEY,
-        baseUrl: process.env.ANYTYPE_API_BASE_URL || 'http://127.0.0.1:31009',
-      },
-      async () => {},
-    );
-    gateway.start();
-    success('Anytype 网关已连接');
+    const { DefaultAcpMapper, AnytypeWatcher, MockAnytypeClient, JournalHandler } = await import('@aimen/anytype-gateway');
+    const mockClient = new MockAnytypeClient();
+    const mapper = new DefaultAcpMapper();
+    const watcher = new AnytypeWatcher(mockClient, mapper, { pollIntervalMs: 5000 });
+    watcher.onNewTask = async (msg) => {
+      const result = await router.route(msg);
+      if (result.success && result.response) {
+        await mapper.applyTaskResult(result.response, mockClient);
+      }
+    };
+    watcher.start();
+    success('Anytype 网关已启动（轮询模式）');
   } else {
     info('跳过 Anytype 网关（未设置 ANYTYPE_API_KEY）');
   }
@@ -92,6 +96,20 @@ async function handleStart(): Promise<void> {
   console.log(`  \x1b[90mAgents   : http://localhost:${port}/acp/agents\x1b[0m`);
   console.log('');
   console.log('\x1b[32m aimen 已就绪，按 Ctrl+C 停止服务\x1b[0m');
+
+  // 优雅退出
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log('');
+    info('正在关闭服务...');
+    transport.stop();
+    registry.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
   await new Promise(() => {});
 }

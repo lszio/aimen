@@ -194,8 +194,36 @@ export interface AcpErrorPayload {
 }
 
 // ---------------------------------------------------------------------------
-// 辅助函数
+// Type Guards
 // ---------------------------------------------------------------------------
+
+/**
+ * 判断是否为 AcpTaskPayload
+ */
+export function isAcpTaskPayload(p: unknown): p is AcpTaskPayload {
+  return typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).taskId === 'string';
+}
+
+/**
+ * 判断是否为 AcpTaskResultPayload
+ */
+export function isAcpTaskResultPayload(p: unknown): p is AcpTaskResultPayload {
+  return typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).taskId === 'string';
+}
+
+/**
+ * 判断是否为 AgentAnnouncePayload
+ */
+export function isAgentAnnouncePayload(p: unknown): p is AgentAnnouncePayload {
+  return typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).agent === 'object';
+}
+
+/**
+ * 判断是否为 AgentLeavePayload
+ */
+export function isAgentLeavePayload(p: unknown): p is AgentLeavePayload {
+  return typeof p === 'object' && p !== null && typeof (p as Record<string, unknown>).agentId === 'string';
+}
 
 /**
  * 创建一个完整的 ACP 消息信封

@@ -17,6 +17,8 @@ import {
   AgentLeavePayload,
   AcpErrorPayload,
   createMessage,
+  isAgentAnnouncePayload,
+  isAgentLeavePayload,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -344,23 +346,23 @@ export class MessageRouter extends EventTarget {
 
     // ---- 自动处理 AgentAnnounce ----
     if (envelope.messageType === AcpMessageType.AgentAnnounce) {
-      const payload = envelope.payload as unknown as AgentAnnouncePayload;
-      if (payload?.agent) {
+      const payload = envelope.payload;
+      if (isAgentAnnouncePayload(payload) && payload?.agent) {
         this.registry.register(payload.agent);
       }
       const response = createMessage(
         AcpMessageType.Message,
         'router',
         envelope.senderId,
-        { result: 'registered', agentId: payload?.agent?.id ?? envelope.senderId },
+        { result: 'registered', agentId: isAgentAnnouncePayload(payload) ? payload.agent.id : envelope.senderId },
       );
       return { success: true, response };
     }
 
     // ---- 自动处理 AgentLeave ----
     if (envelope.messageType === AcpMessageType.AgentLeave) {
-      const payload = envelope.payload as unknown as AgentLeavePayload;
-      const targetId = payload?.agentId ?? envelope.senderId;
+      const payload = envelope.payload;
+      const targetId = isAgentLeavePayload(payload) ? payload.agentId : envelope.senderId;
       this.registry.unregister(targetId);
       const response = createMessage(
         AcpMessageType.Message,

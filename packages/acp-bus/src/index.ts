@@ -13,6 +13,10 @@ export type { AcpMessageType as AcpMessageTypeEnum } from './types.js';
 export {
   AcpMessageType,
   createMessage,
+  isAcpTaskPayload,
+  isAcpTaskResultPayload,
+  isAgentAnnouncePayload,
+  isAgentLeavePayload,
 } from './types.js';
 
 export type {

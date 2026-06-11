@@ -10,7 +10,7 @@
  */
 
 import type { AcpMessageEnvelope, AcpTaskPayload, AcpTaskResultPayload } from '@aimen/acp-bus';
-import { AcpMessageType, createMessage } from '@aimen/acp-bus';
+import { AcpMessageType, createMessage, isAcpTaskPayload, isAcpTaskResultPayload } from '@aimen/acp-bus';
 import type { MessageRouter } from '@aimen/acp-bus';
 
 // ---------------------------------------------------------------------------
@@ -164,7 +164,16 @@ export abstract class AimenAgent {
       return null;
     }
 
-    const payload = envelope.payload as unknown as AcpTaskPayload;
+    const payload = envelope.payload;
+    if (!isAcpTaskPayload(payload)) {
+      return createMessage(
+        AcpMessageType.Error,
+        this.agentId,
+        envelope.senderId,
+        { code: 'INVALID_PAYLOAD', message: 'TaskSubmit 载荷格式无效' },
+      );
+    }
+
     const taskId = payload.taskId;
     const goal = payload.goal;
     const context = payload.context ?? {};
