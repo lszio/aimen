@@ -13,6 +13,7 @@
 import type { AcpMessageEnvelope } from '@aimen/acp-bus';
 import { AcpMessageType, createMessage, isAcpTaskPayload } from '@aimen/acp-bus';
 import type { MessageRouter } from '@aimen/acp-bus';
+import { telemetry } from '@aimen/telemetry';
 
 // ---------------------------------------------------------------------------
 // LLM 配置与调用
@@ -275,7 +276,10 @@ export abstract class AimenAgent {
     this.#status = AgentStatus.Busy;
 
     try {
+      const stopTimer = telemetry.startTimer('agent_execute_duration', { agent: this.agentId, role: this.role });
       const result = await this.execute(goal, context);
+      stopTimer();
+      telemetry.inc('agent_execute_count', { agent: this.agentId, role: this.role });
 
       const resultPayload = { taskId, result };
 
@@ -289,6 +293,7 @@ export abstract class AimenAgent {
       );
     } catch (err) {
       this.#status = AgentStatus.Error;
+      telemetry.inc('agent_execute_error', { agent: this.agentId });
 
       return createMessage(
         AcpMessageType.TaskResult,

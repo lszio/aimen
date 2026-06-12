@@ -1,66 +1,118 @@
 ---
 import Layout from '../layouts/Layout.astro';
+
+// SSR: fetch events from ACP bus
+let events: Array<{
+  timestamp: string;
+  type: string;
+  traceId?: string;
+  data: Record<string, unknown>;
+}> = [];
+
+let metrics: {
+  routes_total?: number;
+  route_errors?: number;
+  agents_online?: number;
+  agent_execute_count?: number;
+  agent_execute_errors?: number;
+} = {};
+
+try {
+  const ACP_URL = import.meta.env.ACP_URL || 'http://localhost:4121';
+  const [eventsRes, healthRes] = await Promise.all([
+    fetch(`${ACP_URL}/acp/events`, { signal: AbortSignal.timeout(3000) }),
+    fetch(`${ACP_URL}/health`, { signal: AbortSignal.timeout(3000) }),
+  ]);
+
+  if (eventsRes.ok) {
+    const body = await eventsRes.json();
+    events = body.data || [];
+  }
+
+  if (healthRes.ok) {
+    const body = await healthRes.json();
+    metrics = body.data?.metrics || {};
+  }
+} catch {
+  // ACP bus not reachable — show empty state
+}
 ---
 
-<Layout title="Journal">
+<Layout title="Observability">
   <div class="space-y-6 lg:space-y-8 max-w-6xl">
     <!-- Page Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-xl lg:text-2xl font-bold text-[#F8FAFC]">Journal</h1>
-        <p class="text-sm text-[#64748B] mt-1 font-body">Agent journal entries and activity log</p>
+        <h1 class="text-xl lg:text-2xl font-bold text-[#F8FAFC]">Observability</h1>
+        <p class="text-sm text-[#64748B] mt-1 font-body">Telemetry, metrics and event stream from the ACP bus</p>
       </div>
     </div>
 
-    <!-- Coming Soon Card -->
+    <!-- Metrics Cards -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
+      <div class="bg-[#0F172A] border border-[#1E293B] rounded-xl p-4">
+        <p class="text-[11px] text-[#64748B] font-medium tracking-wide uppercase font-body">Routes</p>
+        <p class="text-2xl font-bold text-[#F8FAFC] mt-1 font-heading">{metrics.routes_total ?? '—'}</p>
+      </div>
+      <div class="bg-[#0F172A] border border-[#1E293B] rounded-xl p-4">
+        <p class="text-[11px] text-[#64748B] font-medium tracking-wide uppercase font-body">Errors</p>
+        <p class="text-2xl font-bold text-[#EF4444] mt-1 font-heading">{metrics.route_errors ?? '—'}</p>
+      </div>
+      <div class="bg-[#0F172A] border border-[#1E293B] rounded-xl p-4">
+        <p class="text-[11px] text-[#64748B] font-medium tracking-wide uppercase font-body">Agents Live</p>
+        <p class="text-2xl font-bold text-[#22C55E] mt-1 font-heading">{metrics.agents_online ?? '—'}</p>
+      </div>
+      <div class="bg-[#0F172A] border border-[#1E293B] rounded-xl p-4">
+        <p class="text-[11px] text-[#64748B] font-medium tracking-wide uppercase font-body">Executions</p>
+        <p class="text-2xl font-bold text-[#F8FAFC] mt-1 font-heading">{metrics.agent_execute_count ?? '—'}</p>
+      </div>
+      <div class="bg-[#0F172A] border border-[#1E293B] rounded-xl p-4">
+        <p class="text-[11px] text-[#64748B] font-medium tracking-wide uppercase font-body">Exec Errors</p>
+        <p class="text-2xl font-bold text-[#EF4444] mt-1 font-heading">{metrics.agent_execute_errors ?? '—'}</p>
+      </div>
+    </div>
+
+    <!-- Event Stream -->
     <div class="bg-[#0F172A] border border-[#1E293B] rounded-xl overflow-hidden">
-      <!-- Decorative top bar -->
       <div class="h-1 bg-gradient-to-r from-[#22C55E]/40 via-[#22C55E]/20 to-transparent"></div>
 
-      <div class="p-8 lg:p-12 text-center">
-        <!-- Icon -->
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#1E293B] mb-5">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 20h9"/>
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-          </svg>
-        </div>
+      <div class="p-5 lg:p-6">
+        <h2 class="text-sm font-semibold text-[#F8FAFC] font-heading mb-4">Event Stream <span class="text-[#64748B] font-normal">(latest 50)</span></h2>
 
-        <h2 class="text-lg font-semibold text-[#F8FAFC] font-heading mb-2">Activity Journal</h2>
-        <p class="text-sm text-[#64748B] font-body max-w-md mx-auto mb-6">
-          The journal interface is under development. This will provide a chronological log of all agent actions, events, and system updates.
-        </p>
-
-        <!-- Feature preview cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg mx-auto mb-6">
-          <div class="bg-[#020617] border border-[#1E293B] rounded-lg p-3 text-left">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <p class="text-[11px] text-[#94A3B8] font-body">Event Timeline</p>
-          </div>
-          <div class="bg-[#020617] border border-[#1E293B] rounded-lg p-3 text-left">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <p class="text-[11px] text-[#94A3B8] font-body">Agent Logs</p>
-          </div>
-          <div class="bg-[#020617] border border-[#1E293B] rounded-lg p-3 text-left">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22C55E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-1.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-            <p class="text-[11px] text-[#94A3B8] font-body">Search & Filter</p>
-          </div>
-        </div>
-
-        <span class="inline-flex items-center gap-1.5 text-[11px] text-[#64748B] bg-[#1E293B] px-3 py-1.5 rounded-full font-body">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-          Coming in next release
-        </span>
+        {
+          events.length > 0 ? (
+            <div class="space-y-2">
+              {events.map((event) => (
+                <div class="flex items-start gap-3 bg-[#020617]/60 border border-[#1E293B]/50 rounded-lg p-3">
+                  <div class="shrink-0 w-2 h-2 mt-1.5 rounded-full" class:list={{
+                    'bg-[#22C55E]': event.type === 'route.success',
+                    'bg-[#EF4444]': event.type === 'route.error',
+                    'bg-[#F59E0B]': event.type === 'timer',
+                    'bg-[#3B82F6]': !['route.success', 'route.error', 'timer'].includes(event.type),
+                  }}></div>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-[11px] font-mono text-[#22C55E] font-medium">{event.type}</span>
+                      {event.traceId && (
+                        <span class="text-[10px] font-mono text-[#64748B]">trace: {event.traceId.slice(0, 12)}</span>
+                      )}
+                      <span class="text-[10px] font-mono text-[#64748B] ml-auto">{new Date(event.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <pre class="text-[11px] font-mono text-[#94A3B8] mt-1 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(event.data, null, 1)}</pre>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div class="text-center py-12">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+              </svg>
+              <p class="text-sm text-[#64748B] font-body">No events recorded yet</p>
+              <p class="text-[11px] text-[#475569] mt-1 font-body">Start the ACP bus and route some messages to see events appear here</p>
+            </div>
+          )
+        }
       </div>
     </div>
   </div>

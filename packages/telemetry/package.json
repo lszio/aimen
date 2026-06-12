@@ -1,0 +1,13 @@
+{
+  "name": "@aimen/telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "dev": "echo 'telemetry: dev'",
+    "build": "rm -rf dist && bun build ./src/index.ts --outdir ./dist --target node --format esm --external '@aimen/*'",
+    "lint": "echo 'telemetry: lint'"
+  }
+}

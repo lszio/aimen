@@ -21,6 +21,8 @@ import {
   isAgentLeavePayload,
 } from './types.js';
 
+import { telemetry } from '@aimen/telemetry';
+
 // ---------------------------------------------------------------------------
 // 自定义事件类型
 // ---------------------------------------------------------------------------
@@ -105,6 +107,8 @@ export class AgentRegistry extends EventTarget {
       this.#agents.set(agent.id, { ...agent });
     }
     this.dispatchEvent(new AcpBusEvent('agent:register', { agent }));
+    telemetry.inc('agent_register_total', { action: existing ? 'update' : 'register' });
+    telemetry.setGauge('agents_online', this.#agents.size);
   }
 
   /**
@@ -122,6 +126,8 @@ export class AgentRegistry extends EventTarget {
     }
     this.#agents.delete(agentId);
     this.dispatchEvent(new AcpBusEvent('agent:unregister', { agentId, agent }));
+    telemetry.inc('agent_register_total', { action: 'unregister' });
+    telemetry.setGauge('agents_online', this.#agents.size);
     return true;
   }
 
@@ -212,6 +218,7 @@ export class AgentRegistry extends EventTarget {
     this.dispatchEvent(
       new AcpBusEvent('agent:status', { agentId, prevStatus, status, agent }),
     );
+    telemetry.inc('agent_status_change', { from: prevStatus, to: status });
     return true;
   }
 
@@ -401,6 +408,14 @@ export class MessageRouter extends EventTarget {
       );
 
       this.dispatchEvent(new AcpBusEvent('route:error', { envelope, error: errorPayload }));
+      telemetry.inc('route_total', { status: 'error', code: 'ROUTE_NOT_FOUND' });
+      telemetry.emit('route.error', {
+        messageType: envelope.messageType,
+        targetId: envelope.targetId,
+        senderId: envelope.senderId,
+        code: 'ROUTE_NOT_FOUND',
+        message: errorPayload.message,
+      }, envelope.messageId);
       return { success: false, response };
     }
 
@@ -421,10 +436,27 @@ export class MessageRouter extends EventTarget {
       );
 
       this.dispatchEvent(new AcpBusEvent('route:error', { envelope, error: errorPayload }));
+      telemetry.inc('route_total', { status: 'error', code: 'NO_HANDLER' });
+      telemetry.emit('route.error', {
+        messageType: envelope.messageType,
+        targetId: envelope.targetId,
+        senderId: envelope.senderId,
+        code: 'NO_HANDLER',
+        message: errorPayload.message,
+      }, envelope.messageId);
       return { success: false, response };
     }
 
     this.dispatchEvent(new AcpBusEvent('route:success', { envelope, targetAgent, response: result }));
+    telemetry.inc('route_total', { status: 'success', target_role: targetAgent.role });
+    telemetry.inc('route_by_type', { type: envelope.messageType });
+    telemetry.emit('route.success', {
+      messageType: envelope.messageType,
+      targetId: envelope.targetId,
+      targetRole: targetAgent.role,
+      senderId: envelope.senderId,
+      responseType: result.messageType,
+    }, envelope.messageId);
     return { success: true, response: result };
   }
 

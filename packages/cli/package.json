@@ -17,6 +17,7 @@
     "@aimen/acp-bus": "workspace:*",
     "@aimen/agents": "workspace:*",
     "@aimen/anytype-gateway": "workspace:*",
-    "@aimen/auth": "workspace:*"
+    "@aimen/auth": "workspace:*",
+    "@aimen/telemetry": "workspace:*"
   }
 }

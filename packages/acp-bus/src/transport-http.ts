@@ -15,6 +15,7 @@ import {
   type AcpAgentInfo,
 } from './types.js';
 import type { AgentRegistry, MessageRouter } from './router.js';
+import { telemetry } from '@aimen/telemetry';
 
 // ---------------------------------------------------------------------------
 // 类型定义
@@ -349,6 +350,16 @@ export class HttpTransport {
         return await this.#handleCancelTask(request, cancelMatch.id);
       }
 
+      // ---- GET /acp/metrics ----
+      if (method === 'GET' && path === '/acp/metrics') {
+        return this.#handleMetrics();
+      }
+
+      // ---- GET /acp/events ----
+      if (method === 'GET' && path === '/acp/events') {
+        return this.#handleEvents();
+      }
+
       // ---- GET /health ----
       if (method === 'GET' && path === '/health') {
         return this.#handleHealth();
@@ -453,7 +464,38 @@ export class HttpTransport {
       status: 'ok',
       agentCount: this.#options.registry.size,
       uptime: this.#uptime,
+      metrics: {
+        routes_total: telemetry.getCounter('route_total'),
+        route_errors: telemetry.getCounter('route_total', { status: 'error' }),
+        agents_online: telemetry.getGauge('agents_online'),
+        agent_execute_count: telemetry.getCounter('agent_execute_count'),
+        agent_execute_errors: telemetry.getCounter('agent_execute_error'),
+      },
     });
+  }
+
+  /**
+   * 处理 GET /acp/metrics — Prometheus 兼容指标输出
+   *
+   * @returns Prometheus 文本格式的指标
+   */
+  #handleMetrics(): Response {
+    const prometheus = telemetry.toPrometheus();
+    const headers = corsHeaders();
+    headers.set('Content-Type', 'text/plain; charset=utf-8');
+    return new Response(prometheus, { status: 200, headers });
+  }
+
+  /**
+   * 处理 GET /acp/events — 最近事件列表
+   *
+   * @returns 最近事件的 JSON 数组
+   */
+  #handleEvents(): Response {
+    const events = telemetry.getEvents();
+    // 返回最近 50 条，逆序（最新优先）
+    const recent = events.slice(-50).reverse();
+    return jsonSuccess(recent);
   }
 
   /**
